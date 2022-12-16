@@ -1,0 +1,59 @@
+---
+title: "Introduction"
+---
+
+From the early 2000s, many health professionals warned that global pandemics would be a major threat to human health in the 21st century, enabled by the unprecedented level of globalization that the world was stepping into. [1] [2] However, most speculated that the next pandemic would be sparked by an emerging strain of epidemic influenza virus, mirroring the 1918 pandemic. The world was thus taken by surprise when Covid-19, caused by the severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2), went from being reported as an outbreak of an unknown disease in the Wuhan province of China in early January 2020, to being declared a global pandemic by the WHO in the span of less than 3 months. [3]
+
+As of mid-December 2022, our data shows that there have been 545,130,816 confirmed cases of COVID-19 globally, including 6,297,641 deaths (See Table 1). Expectedly, covid-19 infection and mortality rates vary wildly across regions and countries. However, the relative mortality trends differ widely from the predictions made by modelers at the beginning of the pandemic. Indeed, early models predicted that low and middle income countries would suffer a higher death toll based on the knowledge that crowded, unsanitary conditions promote transmission while weak health systems and high levels of comorbidities and existing disease burden exacerbate mortality rates. [4] For instance, some models predicted that the African continent could incur anywhere between 300,000 and 3.3 millions deaths in 2020 alone. [5]  However, our data shows that 254,447 deaths from covid-19 have been reported across African countries, corresponding to only 4% of the total global mortality despite Africa contributing to 17.5% of the world’s population (See Table 1 and Figure 1). 
+
+
+
+```{r,echo=FALSE, message=FALSE,results='asis'}
+
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+# Exploratory 
+analysis_df <- read.csv("analysis_df.csv")
+
+prop_per_continent <- analysis_df |>
+  group_by(Continent)|>
+  summarize("Cumulative cases"= sum(Total_cases), 
+            "Cumulative deaths"= sum(Total_deaths),
+            "Cases per million" = round(sum(Total_cases)/sum(Pop_millions)), 
+            "Deaths per million" = round(sum(Total_deaths)/sum(Pop_millions)), 
+            "Population (in millions)" = round(sum(Pop_millions)))
+
+prop_per_continent <- rbind(prop_per_continent, c("Total", colSums(prop_per_continent[,-1])))
+
+prop_per_continent[,-1] <- sapply( prop_per_continent[,-1], as.numeric )
+
+
+knitr::kable(prop_per_continent, 
+             caption ="Table 1. Cumulative and per million number of Covid-19 cases and Deaths per continent",
+             format.args = list(big.mark = ",")) %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "hover", "condensed")) 
+
+
+```
+
+
+```{r,echo=FALSE, message=FALSE}
+ggplot(prop_per_continent[-1,], aes(x=Continent, y=`Deaths per million`, fill=Continent))+
+  geom_bar(width = 1, stat = "identity")+ 
+  scale_fill_manual(values=c(wes_palette("Moonrise3")[-c(3,4)],wes_palette("Cavalcanti1")[c(2,4,5)]))+
+  theme_classic()+
+  ylab("Mortality rate (deaths per million)")+
+  ggtitle("Figure 1. Mortality rate per continent")
+```
+
+
+
+Since early doom and gloom predictions were made, important risk factors for Covid-19 mortality have been identified or confirmed, including comorbidities such as obesity and cardiovascular diseases, old age, population density, access to healthcare, and acquired immunity. [6] Here, we conduct a retrospective analysis to determine whether the risk factors for covid-19 spread and mortality identified over the course of the pandemic allow to explain the mortality observed in each country, and could have been used to accurately predict the number of deaths. To do so, we assess the goodness of fit of a linear regression model and use the model to identify the most influential risk factors. Additionally, we compare the ability of linear regression- and kNN-based machine learning algorithms to predict the cumulative mortality across countries. 
+
+
+
+
+

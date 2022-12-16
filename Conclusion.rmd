@@ -1,0 +1,26 @@
+---
+title: "Conclusion"
+---
+
+
+Our analysis showed the greatest predictors of the per-country cumulative number of covid-19 deaths were, in order, the cumulative number of covid cases, the GDP per capita and the obesity rate. In turn, the total number of fully vaccinated individuals, the percentage of the population over 65, the population size, the population density and the rate of CVD mortality were not significantly associated with the outcome. 
+
+Despite indicating significant associations between the outcome and the included covariates, and having a relatively large r-square statistic, our model had a very poor accuracy for predicting the outcome as a machine learning algorithm. While its accuracy was slightly better than a kNN algorithm with k=3, both predicted the outcome with an extremely large error. 
+
+A further limitation of our analysis is that our linear model violated the linear regression assumptions (See Figure 6). If we had more time, we could have tried to trasnform the data in order to prevent the violation of linear regression assumptions. Additionally, given the count nature of our outcome, it would be appropriae to consider using a poisson regression model. Finally, if time permitted, we could have compared kNN algorithms with different k values or fitted a random forest machine learning algorithm. 
+
+
+_Figure 6. Diagnostic plots for our linear model_
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+analysis_df <- read.csv("analysis_df.csv")
+
+# Run the analysis: linear regression
+mod <- lm(Total_deaths ~ Total_cases+ fully_vax_count+ Pop_millions+Percent_Over_65 + km2+ GDP_per_capita + Obesity_rate  + cvd_death_rate, analysis_df)
+# check assumptions through diagnostic plots 
+par(mfrow=c(2,2)) 
+plot(mod)
+
+```
+
+

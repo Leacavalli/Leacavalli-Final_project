@@ -1,0 +1,100 @@
+---
+title: 'Results: Data analysis'
+---
+
+
+After fitting our linear regression model, we observed that the total number of cases (p< 2e-16), the population size, and the Obesity rate (p=0.00136 ) were significantly positively associated with the total number of deaths, while the GDP per capita (p=0.00260) was negatively associated with the outcome (Table 3). Specifically, the number of deaths when all covariates were set to 0 was -8170, and increased by around 0.011 for each unit increase in cumulative number of cases and 1666.766 for each unit increase in percentage point of the population obese, while it decreased by -0.881 for each unit decrease in GDP per capita. In turn, there was no significant association between the outcome and either the total number of fully vaccinated individuals, the population size, the percentage of the population over 65, the population density and the rate of CVD mortality. 
+
+```{r,echo=FALSE, message=FALSE,results='asis', warning=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(caret)
+library(FNN)
+
+analysis_df <- read.csv("analysis_df.csv")
+
+# Run the analysis: linear regression
+mod <- lm(Total_deaths ~ Total_cases+ fully_vax_count+ Pop_millions+Percent_Over_65 + km2+ GDP_per_capita + Obesity_rate  + cvd_death_rate, analysis_df)
+# check assumptions through diagnostic plots 
+# par(mfrow=c(2,2)) 
+# plot(mod)
+
+# check results 
+mod_results <- as.tibble(summary(mod)$coef) |>
+  mutate(Estimate=round(Estimate,3))|>
+  rename("P-value"=`Pr(>|t|)`)|>
+  select(-`t value`) |>
+  mutate(Variable= c("Intercept","Number of cases", "Number fully vaccinated", "Population (millions)", "Percentage over65" , "Population density (km2)","GDP per capita" , "Obesity rate (%)" ,"CVD death rate"), .before=Estimate)
+
+
+knitr::kable(mod_results, 
+             caption ="Table 3. Exponentiated Linear regression coefficients with p-values",
+             format.args = list(big.mark = ",")) %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "hover", "condensed")) 
+
+```
+
+
+The R-squared value for our linear model was 0.8401, indicating a good model fit. This was also visible when plotting the cumulative number of deaths predicted by the model against the true cumulative number of deaths as the metrics showed a good correlation (Figure 3).
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+# plot predicted vs observed values to determine the fit of the model
+df_true_pred <- data.frame(true= analysis_df$Total_deaths, predict=round((predict(mod, analysis_df))))
+
+df_true_pred |>
+ggplot(aes(x=true, y=predict))+
+  geom_point()+
+  theme_classic()+
+  geom_abline(intercept = 0, slope = 1, colour = "red")+
+  ylab("Predicted Cumulative death counts")+
+  xlab("True Cumulative death counts") +
+  ggtitle("Figure 3. Predicted vs true values for the outcome")
+
+
+```
+
+Finally, we compared the accuracy of machine learning algorithms using linear regression and kNN to predict the total number of deaths observed in each country.Over 1000 iterations of training and testing the machine learning algorithm, the average root mean square error (RMSE) was 98687.4 (sd=63021.96) for the linear regression model and 101833.9 (sd=32260.5)for the kNN model (See Figures 4 and 5). This indicates that our linear model predicts the total number of deaths with greater accuracy, but more variability, than a kNN model. However, given that the mean total number of deaths across countries was 40893.77, both models have a very large RMSE, indicating that they would both yield inaccurate predictions. 
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+# predictions with linear regression 
+set.seed(1)
+rmse_linear <-replicate(1000, {
+    y <- analysis_df$Total_deaths
+    test_index <- createDataPartition(y, times = 1, p = 0.5, list = FALSE) 
+    train_set <- analysis_df |> slice(-test_index) 
+    test_set <- analysis_df |> slice(test_index) 
+    fit <- lm(Total_deaths ~ Total_cases+ fully_vax_count+ Pop_millions+ Percent_Over_65 + km2+ GDP_per_capita + Obesity_rate + cvd_death_rate, data = train_set) 
+    y_hat <- predict(fit, test_set)
+    sqrt(mean((y_hat - test_set$Total_deaths)^2, na.rm = T)) 
+})
+
+
+hist(rmse_linear, main="Figure 4. Histogram of the RMSE across 1000 simulation \nusing a linear regression") 
+# mean(rmse_linear)
+# sd(rmse_linear)
+
+# mean(analysis_df$Total_deaths)
+
+```
+
+```{r,echo=FALSE, message=FALSE}
+# predictions with knn machine learning 
+set.seed(1)
+rmse_knn <-replicate(1000, {
+    y <- analysis_df$Total_deaths
+    indexes = createDataPartition(analysis_df$Total_deaths, times = 1, p = 0.5, list = F)
+    train = analysis_df[indexes, ] |> select(-c(Country, Total_deaths, Continent))
+    test = analysis_df[-indexes, ] |> select(-c(Country, Total_deaths, Continent))
+    test_outcome <- analysis_df[-indexes, ]|> pull(Total_deaths)
+    train_outcome <- analysis_df[indexes, ]  |> pull(Total_deaths)
+    reg_results <- knn.reg(train[complete.cases(train), ], test[complete.cases(test), ], train_outcome, k = 3)
+    sqrt(mean((reg_results$pred - test_outcome[complete.cases(test) ])^2, na.rm = T)) 
+})
+
+hist(rmse_knn, main="Figure 5. Histogram of the RMSE across 1000 simulation \nusing kNN") 
+
+# mean(rmse_knn)
+# sd(rmse_knn)
+```

@@ -1,0 +1,203 @@
+---
+title: "Results: Web scraping and Data wrangling"
+---
+
+Web scraping was conducted to obtain a table containing the per-country cumulative number of covid-19 deaths as well as indicators for all risk factors of interest for each country. Namely, the risk factors of interested were the cumulative number of covid-19 cases, the total number of fully vaccinated individuals, the population size (in millions), the percentage of the population over 65 years old, the density of the population (per kilometer square), the GDP per capita, the obesity rate (%) and the mortality rate from cardiovascular disease (per 100,000 people). 
+
+Data tables combining covid-19 mortality, infection and vaccination rates are readily available online. However, they seldom contain the additional risk factors of interest for this analysis, and are usually not up-to-date. Therefore, putting together our dataset required data scraping from the most up to date sources, as well as data wrangling to join the tables together by country. Since country names sometimes differed by data sources, we additionally had to format country names to match each other across data sources before joining the tables.  
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+library(rvest)
+library(readr)
+library(tidyverse)
+library(caret)
+library(FNN)
+library(wesanderson)
+library(knitr)
+library(kableExtra)
+library(owidR)
+library(RCurl)
+```
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+html_covid_rates <- read_html("https://www.statista.com/statistics/1104709/coronavirus-deaths-worldwide-per-million-inhabitants/")
+tab_covid_rates_raw <- (html_covid_rates |> html_nodes("table"))[[1]] |> html_table()
+df_covid_rates <- tab_covid_rates_raw |>
+  mutate(Total_cases= as.numeric(gsub(",", "", `Confirmed cases (absolute)`)),
+         Total_deaths=as.numeric(gsub(",", "", `Confirmed deaths (absolute)`)), 
+         Pop_millions= as.numeric(gsub(",", "", `Population (in millions)`)), 
+         Country=Characteristic) |>
+  select(Country, Total_cases, Total_deaths, Pop_millions)
+
+df_covid_rates
+
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+url <- getURL("https://covid.ourworldindata.org/data/owid-covid-data.csv")
+tab_vax_rates_raw <- read.csv(text = url)
+df_vax_rates <- tab_vax_rates_raw |>
+  select(location, date, people_fully_vaccinated, continent) |>
+  filter(!is.na(people_fully_vaccinated)) |>
+  group_by(location, continent) |>
+  summarise(fully_vax_count= max(people_fully_vaccinated)) |>
+  rename(Country =location, Continent=continent) 
+
+df_vax_rates
+
+```
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+html_above_65 <- read_html("https://en.wikipedia.org/wiki/List_of_countries_by_age_structure")
+tab_above_65_raw <- html_table(html_node(html_above_65, ".wikitable"), fill = T)
+colnames(tab_above_65_raw) <- tab_above_65_raw[1, ] 
+
+df_above_65<- tab_above_65_raw[-c(1,2),] |>
+  select(Country, `Over 65`) |>
+  rename(Percent_Over_65 =`Over 65`) |>
+  mutate(Percent_Over_65= parse_number(Percent_Over_65))
+
+
+df_above_65
+  
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+html_pop_density <- read_html("https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_population_density")
+tab_pop_density_raw <- html_table(html_node(html_pop_density, ".wikitable"), fill = T)
+colnames(tab_pop_density_raw) <- tab_pop_density_raw[1, ]
+
+df_pop_density <- tab_pop_density_raw[-1,] |>
+  select(`Country, territory or dependency`, `/km2`) |>
+  rename(Country =`Country, territory or dependency`, km2 = `/km2`) |>
+  mutate(km2= as.numeric(gsub(",", "", km2)))
+
+df_pop_density
+  
+```
+
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+html_GDP_per_capita <- read_html("https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)_per_capita")
+tab_GDP_per_capita_raw <- html_table(html_node(html_GDP_per_capita, ".wikitable"), fill = T)
+colnames(tab_GDP_per_capita_raw) <- tab_GDP_per_capita_raw[1, ]
+
+df_GDP_per_capita <- (tab_GDP_per_capita_raw[-1,] |>
+  select(`Country/Territory`, 5) |>
+  rename(Country=`Country/Territory`, GDP_per_capita = Estimate)|>
+  mutate(GDP_per_capita= as.numeric(gsub(",", "", GDP_per_capita)),
+         Country= str_trim(gsub("\\*", "", Country) ) ))[-1,]
+
+df_GDP_per_capita
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+html_obesity_rates <- read_html("https://en.wikipedia.org/wiki/List_of_sovereign_states_by_obesity_rate")
+tab_obesity_rates_raw <- html_table(html_node(html_obesity_rates, ".wikitable"), fill = T)
+
+df_obesity_rates <- tab_obesity_rates_raw |>
+  rename(Obesity_rate=`Obesity rate (%)`)
+
+df_obesity_rates
+```
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+tab_CVD_rate_raw <- owid("cardiovascular-disease-death-rates")
+df_CVD_rate <- tab_CVD_rate_raw |>
+  rename(Country =entity, cvd_death_rate="Deaths - Cardiovascular diseases - Sex: Both - Age: Age-standardized (Rate)") |>
+  group_by(Country) |>
+  filter(year==max(year), !is.na(cvd_death_rate)) |>
+  select(Country, cvd_death_rate) 
+
+df_CVD_rate
+
+```
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+# df_covid_rates
+df_covid_rates$Country <- str_replace_all(df_covid_rates$Country, "\\p{No}", "")
+df_covid_rates$Country <- gsub('USA', 'United States', df_covid_rates$Country)
+df_covid_rates$Country <- gsub('France', 'France', df_covid_rates$Country)
+df_covid_rates$Country <- gsub('United Kingdom', 'United Kingdom', df_covid_rates$Country)
+df_covid_rates$Country <- gsub('Netherlands', 'Netherlands', df_covid_rates$Country)
+df_covid_rates$Country <- gsub('Timor-Leste', 'Timor', df_covid_rates$Country)
+df_covid_rates$Country <- gsub("Congo \\(Kinshasa)", "Democratic Republic of Congo", df_covid_rates$Country)
+df_covid_rates$Country <- gsub('Congo \\(Brazzaville)', 'Congo', df_covid_rates$Country)
+df_covid_rates$Country <- gsub("Czechia", "Czech Republic", df_covid_rates$Country)
+
+# df_vax_rates
+df_vax_rates$Country <- gsub("Czechia", "Czech Republic", df_vax_rates$Country)
+
+# df_above_65
+df_above_65$Country <- gsub('Democratic Republic of the Congo'  , 'Democratic Republic of Congo', df_above_65$Country)
+df_above_65$Country <- gsub('Republic of the Congo'  , 'Congo', df_above_65$Country)
+df_above_65$Country <- gsub("Timor-Leste"  , "Timor", df_above_65$Country)
+df_above_65$Country <- gsub("Ivory Coast"  , "Cote d'Ivoire", df_above_65$Country)
+df_above_65$Country <- gsub("Eswatini \\(Swaziland)"  , "Eswatini", df_above_65$Country)
+
+# df_pop_density
+df_pop_density$Country <- gsub('DR Congo'  , 'Democratic Republic of Congo', df_pop_density$Country)
+df_pop_density$Country <- gsub('Cyprus \\[note 5]'  , 'Cyprus', df_pop_density$Country)
+df_pop_density$Country <- gsub('Russia \\[note 12]'  , 'Russia', df_pop_density$Country)
+df_pop_density$Country <- gsub('Ukraine \\[note 9]'  , 'Ukraine', df_pop_density$Country)
+df_pop_density$Country <- gsub('Ivory Coast'  , "Cote d'Ivoire", df_pop_density$Country)
+df_pop_density$Country <- gsub('East Timor'  , 'Timor', df_pop_density$Country)
+
+# GDP per capita
+df_GDP_per_capita$Country <- gsub('East Timor'  , 'Timor', df_GDP_per_capita$Country)
+df_GDP_per_capita$Country <- gsub('DR Congo'  , 'Democratic Republic of Congo', df_GDP_per_capita$Country)
+df_GDP_per_capita$Country <- gsub('Ivory Coast'  , "Cote d'Ivoire", df_GDP_per_capita$Country)
+
+
+# obesity rates
+df_obesity_rates$Country <- gsub('Timor-Leste'  , 'Timor', df_obesity_rates$Country)
+df_obesity_rates$Country <- gsub('Democratic Republic of the Congo'  , 'Democratic Republic of Congo', df_obesity_rates$Country)
+df_obesity_rates$Country <- gsub('Republic of the Congo'  , 'Congo', df_obesity_rates$Country)
+df_obesity_rates$Country <- gsub("Ivory Coast"  , "Cote d'Ivoire", df_obesity_rates$Country)
+
+# df_CVD_rate
+df_CVD_rate$Country <- gsub("Czechia", "Czech Republic", df_CVD_rate$Country)
+```
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+# join and transform data to create the analysis-ready dataframe 
+analysis_df <- left_join(df_covid_rates, df_vax_rates) |>
+  left_join(df_above_65)|>
+  left_join(df_pop_density)|>
+  left_join(df_GDP_per_capita)|>
+  left_join(df_obesity_rates)|>
+  left_join(df_CVD_rate)
+
+analysis_df[which(is.na(analysis_df$Continent)),]$Continent <- c("Asia","Africa")
+
+# write.csv(analysis_df, "analysis_df.csv")
+```
+
+
+```{r,echo=FALSE, message=FALSE,results='asis', warning=FALSE}
+analysis_df_pre_wrangling <- length(unique(c(df_covid_rates$Country, 
+                     df_vax_rates$Country,
+                     df_above_65$Country,
+                     df_pop_density$Country,
+                     df_pop_density$Country,
+                     df_GDP_per_capita$Country,
+                     df_obesity_rates$Country,
+                     df_CVD_rate$Country)) )
+
+df <- data.frame("Pre-wrangling"=analysis_df_pre_wrangling, "Post-Wrangling"=length(unique(analysis_df$Country)))
+
+knitr::kable(df, 
+             caption ="Table 2. Number of unique country names before and after data wrangling",
+             format.args = list(big.mark = ",")) %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "hover", "condensed")) 
+
+
+```
+
